@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+httpx
+aiosqlite
+opencv-python
+Pillow
+sounddevice
+numpy
+webrtcvad-wheels
+pyncm
+pydantic
+python-multipart
+websockets
+pywin32
+psutil
