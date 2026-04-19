@@ -74,7 +74,14 @@ async def remote_asr(file: UploadFile = File(...)):
     key = get_key("siliconflow")
     if not key:
         return {"text": "", "error": "No siliconflow key"}
-    content = await file.read()
+    chunks = []
+    total = 0
+    while chunk := await file.read(65536):
+        total += len(chunk)
+        if total > 10 * 1024 * 1024:
+            return {"text": "", "error": "文件太大，最大 10MB"}
+        chunks.append(chunk)
+    content = b"".join(chunks)
     print(f"[RemoteASR] Received {len(content)} bytes, filename={file.filename}")
     try:
         async with httpx.AsyncClient() as client:

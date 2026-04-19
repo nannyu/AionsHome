@@ -2,7 +2,7 @@
 高德地图定位模块：坐标转换、距离计算、高德 API 调用、状态机管理、哨兵联动
 """
 
-import json, time, math, asyncio, re
+import json, time, math, asyncio, re, uuid
 from pathlib import Path
 
 import httpx, aiosqlite
@@ -677,7 +677,7 @@ async def _notify_sentinel(old_state: str, new_state: str, status: dict, event_d
 {{"monitoringlog":"位置变化事件记录，例如：检测到{user_name}离开了家，当前位于XX。","call_core":false,"core_reason":""}}"""
 
     sentinel_model = "gemini-3.1-flash-lite-preview"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{sentinel_model}:generateContent?key={gemini_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{sentinel_model}:generateContent"
     contents = [{"role": "user", "parts": [{"text": prompt}]}]
     payload = {"contents": contents}
 
@@ -687,7 +687,7 @@ async def _notify_sentinel(old_state: str, new_state: str, status: dict, event_d
 
     try:
         async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(url, json=payload, headers={"x-goog-api-key": gemini_key})
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -809,7 +809,7 @@ async def _call_core_location(event_desc: str, status: dict, core_reason: str, c
     messages = prefix + mem_inject + history + [{"role": "user", "content": core_prompt}]
 
     # 预生成 msg_id + TTS
-    core_msg_id = f"msg_{int(time.time() * 1000)}_lr"
+    core_msg_id = f"msg_{uuid.uuid4().hex[:16]}_lr"
     loc_tts = None
     if manager.any_tts_enabled():
         tts_voice = manager.get_tts_voice()
@@ -830,14 +830,14 @@ async def _call_core_location(event_desc: str, status: dict, core_reason: str, c
         return
 
     now = time.time()
-    trigger_msg_id = f"msg_{int(now * 1000)}_lt"
+    trigger_msg_id = f"msg_{uuid.uuid4().hex[:16]}_lt"
     async with get_db() as db:
         await db.execute(
             "INSERT INTO messages (id, conv_id, role, content, created_at, attachments) VALUES (?,?,?,?,?,?)",
             (trigger_msg_id, conv_id, "cam_trigger", core_prompt, now, "[]"),
         )
         sys_now = time.time()
-        sys_msg_id = f"msg_{int(sys_now * 1000)}_ls"
+        sys_msg_id = f"msg_{uuid.uuid4().hex[:16]}_ls"
         sys_content = f"检测到{user_name}的位置发生变化，拉响警报！"
         await db.execute(
             "INSERT INTO messages (id, conv_id, role, content, created_at, attachments) VALUES (?,?,?,?,?,?)",

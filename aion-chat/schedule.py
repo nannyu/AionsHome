@@ -5,7 +5,7 @@
 - 所有日程持久化在 SQLite schedules 表，重启后自动恢复
 """
 
-import asyncio, json, time, threading, logging, re
+import asyncio, json, time, threading, logging, re, uuid
 from datetime import datetime
 
 import aiosqlite
@@ -224,7 +224,7 @@ class ScheduleManager:
         messages = prefix + mem_inject + history + [{"role": "user", "content": trigger_prompt}]
 
         # 预生成 ai_msg_id（TTS 分段文件命名需要）
-        ai_msg_id = f"msg_{int(time.time()*1000)}_sa"
+        ai_msg_id = f"msg_{uuid.uuid4().hex[:16]}_sa"
 
         # TTS：检查是否有前端开了 TTS
         alarm_tts = None
@@ -272,7 +272,7 @@ class ScheduleManager:
 
         # 插入系统提示 + AI 回复
         now = time.time()
-        sys_msg_id = f"msg_{int(now*1000)}_st"
+        sys_msg_id = f"msg_{uuid.uuid4().hex[:16]}_st"
         sys_content = f"⏰ 日程闹铃触发：{content}"
         async with get_db() as db:
             await db.execute(
@@ -451,7 +451,7 @@ class ScheduleManager:
         ]
 
         # 预生成 ai_msg_id（TTS 分段文件命名需要）
-        ai_msg_id = f"msg_{int(time.time()*1000)}_sm"
+        ai_msg_id = f"msg_{uuid.uuid4().hex[:16]}_sm"
 
         # TTS：检查是否有前端开了 TTS
         monitor_tts = None
@@ -499,7 +499,7 @@ class ScheduleManager:
 
         # 插入系统提示 + AI 回复
         now = time.time()
-        sys_msg_id = f"msg_{int(now*1000)}_sm"
+        sys_msg_id = f"msg_{uuid.uuid4().hex[:16]}_sm"
         sys_content = f"{ai_name}查看了监控"
         async with get_db() as db:
             await db.execute(
@@ -621,7 +621,7 @@ async def process_schedule_commands(full_text: str, conv_id: str = None) -> str:
 async def _sys_msg(conv_id: str, content: str):
     """插入一条系统消息并广播"""
     now = time.time()
-    msg_id = f"msg_{int(now*1000)}_ss"
+    msg_id = f"msg_{uuid.uuid4().hex[:16]}_ss"
     async with get_db() as db:
         await db.execute(
             "INSERT INTO messages (id, conv_id, role, content, created_at, attachments) VALUES (?,?,?,?,?,?)",
@@ -643,7 +643,7 @@ async def _get_schedule_info(sid: str) -> dict | None:
 
 
 async def _add_schedule(stype: str, trigger_at: str, content: str):
-    sid = f"sch_{int(time.time()*1000)}"
+    sid = f"sch_{uuid.uuid4().hex[:12]}"
     now = time.time()
     trigger_at = trigger_at.replace("T", " ")
     async with get_db() as db:

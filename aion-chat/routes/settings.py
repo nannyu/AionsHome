@@ -32,41 +32,35 @@ class SettingsUpdate(BaseModel):
 async def get_settings():
     def mask(k):
         if not k or len(k) < 8:
-            return k
+            return "*" * len(k) if k else ""
         return k[:4] + "*" * (len(k) - 8) + k[-4:]
     return {
-        "gemini_key": SETTINGS.get("gemini_key", ""),
-        "siliconflow_key": SETTINGS.get("siliconflow_key", ""),
-        "gemini_free_key": SETTINGS.get("gemini_free_key", ""),
-        "aipro_key": SETTINGS.get("aipro_key", ""),
-        "netease_music_u": SETTINGS.get("netease_music_u", ""),
         "gemini_key_masked": mask(SETTINGS.get("gemini_key", "")),
         "siliconflow_key_masked": mask(SETTINGS.get("siliconflow_key", "")),
         "gemini_free_key_masked": mask(SETTINGS.get("gemini_free_key", "")),
         "aipro_key_masked": mask(SETTINGS.get("aipro_key", "")),
         "netease_music_u_masked": mask(SETTINGS.get("netease_music_u", "")),
+        "has_gemini_key": bool(SETTINGS.get("gemini_key")),
+        "has_siliconflow_key": bool(SETTINGS.get("siliconflow_key")),
+        "has_gemini_free_key": bool(SETTINGS.get("gemini_free_key")),
+        "has_aipro_key": bool(SETTINGS.get("aipro_key")),
+        "has_netease_music_u": bool(SETTINGS.get("netease_music_u")),
     }
 
 @router.put("/api/settings")
 async def update_settings(body: SettingsUpdate):
-    if body.gemini_key is not None:
-        SETTINGS["gemini_key"] = body.gemini_key
-    if body.siliconflow_key is not None:
-        SETTINGS["siliconflow_key"] = body.siliconflow_key
-    if body.gemini_free_key is not None:
-        SETTINGS["gemini_free_key"] = body.gemini_free_key
-    if body.aipro_key is not None:
-        SETTINGS["aipro_key"] = body.aipro_key
-    if body.netease_music_u is not None:
-        old_mu = SETTINGS.get("netease_music_u", "")
-        SETTINGS["netease_music_u"] = body.netease_music_u
-        if body.netease_music_u != old_mu:
-            # MUSIC_U 变更，重新登录 pyncm
-            try:
-                from music import reload_login
-                reload_login()
-            except Exception:
-                pass
+    changed_keys = []
+    for field in ("gemini_key", "siliconflow_key", "gemini_free_key", "aipro_key", "netease_music_u"):
+        val = getattr(body, field, None)
+        if val is not None:
+            SETTINGS[field] = val
+            changed_keys.append(field)
+    if "netease_music_u" in changed_keys:
+        try:
+            from music import reload_login
+            reload_login()
+        except Exception:
+            pass
     save_settings(SETTINGS)
     return {"ok": True}
 

@@ -118,9 +118,9 @@ async def get_location_config():
     if k and len(k) >= 8:
         masked_key = k[:4] + "*" * (len(k) - 8) + k[-4:]
     return {
-        **cfg,
-        "amap_key": k,
+        **{k2: v2 for k2, v2 in cfg.items() if k2 != "amap_key"},
         "amap_key_masked": masked_key,
+        "has_amap_key": bool(k),
         "active": cfg.get("enabled", False) and not is_location_quiet_hours(),
     }
 

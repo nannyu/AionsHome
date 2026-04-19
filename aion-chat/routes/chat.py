@@ -2,7 +2,7 @@
 聊天核心路由：对话 CRUD、消息 CRUD、send_message、regenerate
 """
 
-import json, time, asyncio, re
+import json, time, asyncio, re, uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Query
@@ -53,7 +53,7 @@ async def _toy_sys_msg(conv_id: str, commands: list):
             name = TOY_PRESET_NAMES.get(n, f'档位{n}')
             text = f"❤️ {ai_name} · 心动{n} · {name}"
         now = time.time()
-        msg_id = f"msg_{int(now*1000)}_toy"
+        msg_id = f"msg_{uuid.uuid4().hex[:16]}_toy"
         async with get_db() as db:
             await db.execute(
                 "INSERT INTO messages (id, conv_id, role, content, created_at, attachments) VALUES (?,?,?,?,?,?)",
@@ -112,7 +112,7 @@ async def list_conversations():
 @router.post("/api/conversations")
 async def create_conversation(body: ConvCreate):
     now = time.time()
-    conv_id = f"conv_{int(now*1000)}"
+    conv_id = f"conv_{uuid.uuid4().hex[:12]}"
     async with get_db() as db:
         await db.execute(
             "INSERT INTO conversations (id, title, model, created_at, updated_at) VALUES (?,?,?,?,?)",
@@ -413,7 +413,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
 
     debug_prompt = [{"role": m["role"], "content": m["content"][:500]} for m in history]
 
-    ai_msg_id = f"msg_{int(time.time()*1000)}"
+    ai_msg_id = f"msg_{uuid.uuid4().hex[:16]}"
     usage_meta: dict = {}
 
     _q: asyncio.Queue = asyncio.Queue()
@@ -495,7 +495,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
                     hw_content = hw_content.strip()
                     if hw_content:
                         hw_now = time.time()
-                        hw_id = f"hw_{int(hw_now*1000)}"
+                        hw_id = f"hw_{uuid.uuid4().hex[:12]}"
                         async with get_db() as hw_db:
                             await hw_db.execute(
                                 "INSERT INTO heart_whispers (id, conv_id, msg_id, content, created_at) VALUES (?,?,?,?,?)",
@@ -513,7 +513,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
                     mem_content = mem_content.strip()
                     if mem_content:
                         mem_now = time.time()
-                        mem_id = f"mem_{int(mem_now*1000)}"
+                        mem_id = f"mem_{uuid.uuid4().hex[:12]}"
                         vec = await get_embedding(mem_content)
                         async with get_db() as mem_db:
                             await mem_db.execute(
@@ -633,7 +633,7 @@ async def send_message(conv_id: str, body: MsgCreate):
     if body.client_id:
         manager.set_last_sender(body.client_id)
     now = time.time()
-    msg_id = f"msg_{int(now*1000)}"
+    msg_id = f"msg_{uuid.uuid4().hex[:16]}"
 
     att_json = json.dumps(body.attachments, ensure_ascii=False) if body.attachments else "[]"
     async with get_db() as db:
@@ -876,7 +876,7 @@ async def send_message(conv_id: str, body: MsgCreate):
 
     debug_prompt = [{"role": m["role"], "content": m["content"][:500]} for m in history]
 
-    ai_msg_id = f"msg_{int(time.time()*1000)}"
+    ai_msg_id = f"msg_{uuid.uuid4().hex[:16]}"
     usage_meta: dict = {}
 
     # ── 后台任务 + SSE 转发：AI 生成和保存在后台任务中完成，即使客户端断开也不丢失 ──
@@ -971,7 +971,7 @@ async def send_message(conv_id: str, body: MsgCreate):
                     hw_content = hw_content.strip()
                     if hw_content:
                         hw_now = time.time()
-                        hw_id = f"hw_{int(hw_now*1000)}"
+                        hw_id = f"hw_{uuid.uuid4().hex[:12]}"
                         async with get_db() as hw_db:
                             await hw_db.execute(
                                 "INSERT INTO heart_whispers (id, conv_id, msg_id, content, created_at) VALUES (?,?,?,?,?)",
@@ -990,7 +990,7 @@ async def send_message(conv_id: str, body: MsgCreate):
                     mem_content = mem_content.strip()
                     if mem_content:
                         mem_now = time.time()
-                        mem_id = f"mem_{int(mem_now*1000)}"
+                        mem_id = f"mem_{uuid.uuid4().hex[:12]}"
                         vec = await get_embedding(mem_content)
                         async with get_db() as mem_db:
                             await mem_db.execute(
@@ -1312,7 +1312,7 @@ async def perform_poi_check(conv_id: str, model_key: str, categories: list[str])
     ]
 
     # 预生成 msg_id + TTS
-    msg_id = f"msg_{int(time.time()*1000)}_poi"
+    msg_id = f"msg_{uuid.uuid4().hex[:16]}_poi"
     poi_tts = None
     if manager.any_tts_enabled():
         tts_voice = manager.get_tts_voice()
@@ -1334,7 +1334,7 @@ async def perform_poi_check(conv_id: str, model_key: str, categories: list[str])
 
     # 6. 插入系统提示 + AI 回复
     sys_now = time.time()
-    sys_msg_id = f"msg_{int(sys_now*1000)}_poi_sys"
+    sys_msg_id = f"msg_{uuid.uuid4().hex[:16]}_poi_sys"
     searched_cats = "、".join(c.strip() for c in categories)
     sys_content = f"{ai_name}搜索了{user_name}周边的{searched_cats}信息"
     async with get_db() as db:
@@ -1413,7 +1413,7 @@ async def perform_activity_check(conv_id: str, model_key: str, n: int = 6):
     ]
 
     # 预生成 msg_id + TTS
-    msg_id = f"msg_{int(time.time()*1000)}_ac"
+    msg_id = f"msg_{uuid.uuid4().hex[:16]}_ac"
     ac_tts = None
     if manager.any_tts_enabled():
         tts_voice = manager.get_tts_voice()
@@ -1434,7 +1434,7 @@ async def perform_activity_check(conv_id: str, model_key: str, n: int = 6):
         return
 
     sys_now = time.time()
-    sys_msg_id = f"msg_{int(sys_now*1000)}_ac_sys"
+    sys_msg_id = f"msg_{uuid.uuid4().hex[:16]}_ac_sys"
     sys_content = f"{ai_name}查看了{user_name}过去{minutes}分钟的动态"
     async with get_db() as db:
         await db.execute(
@@ -1657,7 +1657,7 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
             history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到，我会自然地参考这些记忆。"})
 
     debug_prompt = [{"role": m["role"], "content": m["content"][:500]} for m in history]
-    ai_msg_id = f"msg_{int(time.time()*1000)}"
+    ai_msg_id = f"msg_{uuid.uuid4().hex[:16]}"
     usage_meta: dict = {}
 
     # ── 后台任务 + SSE 转发：AI 生成和保存在后台任务中完成，即使客户端断开也不丢失 ──
@@ -1751,7 +1751,7 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
                     hw_content = hw_content.strip()
                     if hw_content:
                         hw_now = time.time()
-                        hw_id = f"hw_{int(hw_now*1000)}"
+                        hw_id = f"hw_{uuid.uuid4().hex[:12]}"
                         async with get_db() as hw_db:
                             await hw_db.execute(
                                 "INSERT INTO heart_whispers (id, conv_id, msg_id, content, created_at) VALUES (?,?,?,?,?)",
@@ -1770,7 +1770,7 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
                     mem_content = mem_content.strip()
                     if mem_content:
                         mem_now = time.time()
-                        mem_id = f"mem_{int(mem_now*1000)}"
+                        mem_id = f"mem_{uuid.uuid4().hex[:12]}"
                         vec = await get_embedding(mem_content)
                         async with get_db() as mem_db:
                             await mem_db.execute(

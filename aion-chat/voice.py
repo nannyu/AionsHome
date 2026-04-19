@@ -338,7 +338,7 @@ class VoiceWakeup:
                     # 等 AI 说完（持续读取流，防止缓冲区溢出）
                     while self.ai_speaking and not self._stop_evt.is_set():
                         try:
-                            stream.read(FRAME_SIZE)
+                            stream.read(VAD_FRAME_SIZE)
                         except Exception:
                             time.sleep(0.1)
 

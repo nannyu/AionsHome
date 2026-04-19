@@ -17,15 +17,15 @@
   </div>
   <div class="page-content">
     <label class="form-label">Gemini API Key</label>
-    <input class="form-input" type="text" id="geminiKeyInput" placeholder="输入 Gemini API Key..." autocomplete="off" style="font-family:monospace">
+    <input class="form-input" type="password" id="geminiKeyInput" placeholder="输入 Gemini API Key..." autocomplete="off" style="font-family:monospace">
     <label class="form-label">Gemini Free Key（哨兵+向量）</label>
-    <input class="form-input" type="text" id="geminiFreeKeyInput" placeholder="留空则复用上方 Key" autocomplete="off" style="font-family:monospace">
+    <input class="form-input" type="password" id="geminiFreeKeyInput" placeholder="留空则复用上方 Key" autocomplete="off" style="font-family:monospace">
     <label class="form-label">硅基流动 API Key</label>
-    <input class="form-input" type="text" id="sfKeyInput" placeholder="输入硅基流动 API Key..." autocomplete="off" style="font-family:monospace">
+    <input class="form-input" type="password" id="sfKeyInput" placeholder="输入硅基流动 API Key..." autocomplete="off" style="font-family:monospace">
     <label class="form-label">中转站 API Key</label>
-    <input class="form-input" type="text" id="aiproKeyInput" placeholder="输入中转站 API Key..." autocomplete="off" style="font-family:monospace">
+    <input class="form-input" type="password" id="aiproKeyInput" placeholder="输入中转站 API Key..." autocomplete="off" style="font-family:monospace">
     <label class="form-label">网易云 MUSIC_U Cookie（VIP 点歌）</label>
-    <input class="form-input" type="text" id="neteaseMusicUInput" placeholder="浏览器 F12 → Cookie → MUSIC_U" autocomplete="off" style="font-family:monospace">
+    <input class="form-input" type="password" id="neteaseMusicUInput" placeholder="浏览器 F12 → Cookie → MUSIC_U" autocomplete="off" style="font-family:monospace">
     <div class="btn-row">
       <button class="btn-cancel" onclick="location.href='/'">取消</button>
       <button class="btn-save" onclick="saveSettings()">保存</button>
@@ -38,22 +38,30 @@ connectCommonWS();
 
 (async function init() {
   const s = await api("GET", "/api/settings");
-  $("geminiKeyInput").value = s.gemini_key || "";
-  $("geminiFreeKeyInput").value = s.gemini_free_key || "";
-  $("sfKeyInput").value = s.siliconflow_key || "";
-  $("aiproKeyInput").value = s.aipro_key || "";
-  $("neteaseMusicUInput").value = s.netease_music_u || "";
+  // 显示 masked 值作为 placeholder，输入框留空（用户输入新值时覆盖）
+  if (s.gemini_key_masked) $("geminiKeyInput").placeholder = "当前: " + s.gemini_key_masked;
+  if (s.gemini_free_key_masked) $("geminiFreeKeyInput").placeholder = "当前: " + s.gemini_free_key_masked;
+  if (s.siliconflow_key_masked) $("sfKeyInput").placeholder = "当前: " + s.siliconflow_key_masked;
+  if (s.aipro_key_masked) $("aiproKeyInput").placeholder = "当前: " + s.aipro_key_masked;
+  if (s.netease_music_u_masked) $("neteaseMusicUInput").placeholder = "当前: " + s.netease_music_u_masked;
 })();
 
 async function saveSettings() {
-  await api("PUT", "/api/settings", {
-    gemini_key: $("geminiKeyInput").value.trim(),
-    gemini_free_key: $("geminiFreeKeyInput").value.trim(),
-    siliconflow_key: $("sfKeyInput").value.trim(),
-    aipro_key: $("aiproKeyInput").value.trim(),
-    netease_music_u: $("neteaseMusicUInput").value.trim()
-  });
+  const body = {};
+  const fields = [
+    ["geminiKeyInput", "gemini_key"],
+    ["geminiFreeKeyInput", "gemini_free_key"],
+    ["sfKeyInput", "siliconflow_key"],
+    ["aiproKeyInput", "aipro_key"],
+    ["neteaseMusicUInput", "netease_music_u"],
+  ];
+  for (const [inputId, key] of fields) {
+    const val = $(inputId).value.trim();
+    if (val) body[key] = val;
+  }
+  await api("PUT", "/api/settings", body);
   showToast("✅ 已保存");
+  setTimeout(() => location.reload(), 500);
 }
 </script>
 </body>

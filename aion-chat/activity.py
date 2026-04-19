@@ -264,6 +264,7 @@ class PCActivityTracker:
         self._running = False
         self._last_title = ""
         self._event_loop = None
+        self._platform = None
 
     def set_event_loop(self, loop):
         self._event_loop = loop
@@ -274,19 +275,34 @@ class PCActivityTracker:
         if self._thread and self._thread.is_alive():
             print("[PCActivity] 线程已在运行，跳过", flush=True)
             return
-        try:
-            import win32gui  # noqa: F401
-            print("[PCActivity] win32gui 导入成功", flush=True)
-        except ImportError:
-            print("[PCActivity] pywin32 未安装，PC 活动采集已禁用", flush=True)
-            return
-        except Exception as e:
-            print(f"[PCActivity] win32gui 导入失败: {e}", flush=True)
-            return
+        self._platform = sys.platform
+        if self._platform == "win32":
+            try:
+                import win32gui  # noqa: F401
+                print("[PCActivity] win32gui 导入成功", flush=True)
+            except ImportError:
+                print("[PCActivity] pywin32 未安装，PC 活动采集已禁用", flush=True)
+                return
+            except Exception as e:
+                print(f"[PCActivity] win32gui 导入失败: {e}", flush=True)
+                return
+        elif self._platform == "darwin":
+            try:
+                import AppKit  # noqa: F401
+                print("[PCActivity] AppKit 导入成功", flush=True)
+            except ImportError:
+                print("[PCActivity] pyobjc 未安装，macOS 活动采集已禁用 (pip install pyobjc)", flush=True)
+                return
+        else:
+            # Linux: 使用 xdotool 或 wmctrl
+            import shutil
+            if not shutil.which("xdotool") and not shutil.which("wmctrl"):
+                print("[PCActivity] Linux 需要安装 xdotool 或 wmctrl (sudo apt install xdotool)", flush=True)
+                return
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True, name="PCActivity")
         self._thread.start()
-        print(f"[PCActivity] PC 活动采集已启动（间隔 {self.interval}s）", flush=True)
+        print(f"[PCActivity] PC 活动采集已启动（间隔 {self.interval}s, 平台 {self._platform}）", flush=True)
 
     def stop(self):
         self._running = False
@@ -295,6 +311,54 @@ class PCActivityTracker:
             self._thread = None
 
     def _loop(self):
+        import time as _time
+
+        if self._platform == "win32":
+            self._loop_win32()
+        elif self._platform == "darwin":
+            self._loop_macos()
+        else:
+            self._loop_linux()
+
+    def _collect_entry(self, app_name: str, title: str):
+        """通用的采集+记录+广播逻辑"""
+        import time as _time
+        if not title:
+            return
+        title_changed = title != self._last_title
+
+        now = _time.time()
+        entry = {
+            "timestamp": now,
+            "time": _time.strftime("%H:%M:%S"),
+            "date": _time.strftime("%Y-%m-%d"),
+            "device": "pc",
+            "app": app_name,
+            "title": title,
+        }
+        append_activity_log(entry)
+
+        if title_changed:
+            self._last_title = title
+            print(f"[PCActivity] {entry['time']} {app_name} - {title[:60]}", flush=True)
+
+        try:
+            cleanup_old_activity_logs()
+        except Exception:
+            pass
+
+        if title_changed and self._event_loop:
+            import asyncio
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    manager.broadcast({"type": "activity_log", "data": entry}),
+                    self._event_loop
+                )
+            except Exception as be:
+                print(f"[PCActivity] ⚠ 广播失败: {be}")
+
+    def _loop_win32(self):
+        import time as _time
         try:
             import win32gui
             import win32process
@@ -302,72 +366,141 @@ class PCActivityTracker:
             print(f"[PCActivity] ❌ 线程内导入失败: {e}")
             self._running = False
             return
-        import time as _time
 
-        print(f"[PCActivity] 采集线程已进入循环 (pid={__import__('os').getpid()})", flush=True)
-
+        print(f"[PCActivity] Win32 采集线程已进入循环", flush=True)
         while self._running:
             try:
                 hwnd = win32gui.GetForegroundWindow()
                 title = win32gui.GetWindowText(hwnd)
-
-                # 忽略空标题和桌面（Program Manager 是 Windows 桌面，无意义）
                 if title and title != "Program Manager":
-                    # 尝试获取进程名
-                    app_name = self._get_process_name(hwnd, win32process)
-                    title_changed = title != self._last_title
-
-                    now = _time.time()
-                    entry = {
-                        "timestamp": now,
-                        "time": _time.strftime("%H:%M:%S"),
-                        "date": _time.strftime("%Y-%m-%d"),
-                        "device": "pc",
-                        "app": app_name,
-                        "title": title,
-                    }
-                    append_activity_log(entry)
-
-                    if title_changed:
-                        self._last_title = title
-                        print(f"[PCActivity] {entry['time']} {app_name} - {title[:60]}", flush=True)
-
-                    # 清理过期日志
-                    try:
-                        cleanup_old_activity_logs()
-                    except Exception:
-                        pass
-
-                    # 广播给前端（仅窗口变化时广播，避免刷屏）
-                    if title_changed and self._event_loop:
-                        import asyncio
-                        try:
-                            asyncio.run_coroutine_threadsafe(
-                                manager.broadcast({
-                                    "type": "activity_log",
-                                    "data": entry
-                                }),
-                                self._event_loop
-                            )
-                        except Exception as be:
-                            print(f"[PCActivity] ⚠ 广播失败: {be}")
-
+                    app_name = self._get_process_name_win32(hwnd, win32process)
+                    self._collect_entry(app_name, title)
             except Exception as e:
                 print(f"[PCActivity] ❌ 错误: {e}")
-                import traceback
-                traceback.print_exc()
-
-            # 等待间隔（每秒检查一次是否需要停止）
             for _ in range(self.interval):
-                if not self._running:
-                    break
+                if not self._running: break
                 _time.sleep(1)
+        print("[PCActivity] 线程退出")
 
+    def _loop_macos(self):
+        import time as _time
+        try:
+            from AppKit import NSWorkspace
+            from Quartz import NSWorkspaceActiveSpaceDidChangeNotification
+        except ImportError as e:
+            print(f"[PCActivity] ❌ macOS 依赖缺失: {e}")
+            self._running = False
+            return
+
+        print("[PCActivity] macOS 采集线程已进入循环", flush=True)
+        ws = NSWorkspace.sharedWorkspace()
+        while self._running:
+            try:
+                app = ws.frontmostApplication()
+                app_name = app.localizedName() if app else "Unknown"
+                title = ""
+                # 尝试通过 Accessibility API 获取窗口标题
+                try:
+                    from ApplicationServices import AXUIElementCreateApplication, AXUIElementCopyAttributeValue, kAXFocusedWindowAttribute, kAXTitleAttribute
+                    from ApplicationServices import AXIsProcessTrusted
+                    if AXIsProcessTrusted():
+                        pid = app.processIdentifier() if app else 0
+                        if pid:
+                            ax_app = AXUIElementCreateApplication(pid)
+                            from ctypes import c_void_p, POINTER, byref, cast
+                            from CoreFoundation import CFStringRef
+                            focused = c_void_p(0)
+                            err = AXUIElementCopyAttributeValue(ax_app, kAXFocusedWindowAttribute, byref(focused))
+                            if err == 0 and focused:
+                                cf_title = c_void_p(0)
+                                err2 = AXUIElementCopyAttributeValue(focused, kAXTitleAttribute, byref(cf_title))
+                                if err2 == 0 and cf_title:
+                                    from CoreFoundation import CFStringGetCStringPtr, kCFStringEncodingUTF8
+                                    buf = CFStringGetCStringPtr(cf_title, kCFStringEncodingUTF8)
+                                    if buf:
+                                        import ctypes
+                                        title = ctypes.string_at(buf).decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+                if not title:
+                    title = app_name
+                self._collect_entry(app_name, title)
+            except Exception as e:
+                print(f"[PCActivity] ❌ macOS 采集错误: {e}")
+            for _ in range(self.interval):
+                if not self._running: break
+                _time.sleep(1)
+        print("[PCActivity] 线程退出")
+
+    def _loop_linux(self):
+        import time as _time
+        import subprocess
+        import shutil
+
+        use_xdotool = shutil.which("xdotool") is not None
+
+        print("[PCActivity] Linux 采集线程已进入循环", flush=True)
+        while self._running:
+            try:
+                title = ""
+                app_name = "Unknown"
+                if use_xdotool:
+                    try:
+                        result = subprocess.run(
+                            ["xdotool", "getactivewindow", "getwindowname"],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        if result.returncode == 0:
+                            title = result.stdout.strip()
+                    except Exception:
+                        pass
+                    try:
+                        wid_result = subprocess.run(
+                            ["xdotool", "getactivewindow"],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        if wid_result.returncode == 0:
+                            wid = wid_result.stdout.strip()
+                            pid_result = subprocess.run(
+                                ["xdotool", "getwindowpid", wid],
+                                capture_output=True, text=True, timeout=5
+                            )
+                            if pid_result.returncode == 0:
+                                import os
+                                try:
+                                    app_name = os.readlink(f"/proc/{pid_result.stdout.strip()}/exe").split("/")[-1]
+                                except Exception:
+                                    app_name = pid_result.stdout.strip()
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        result = subprocess.run(
+                            ["wmctrl", "-l"],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        if result.returncode == 0:
+                            for line in result.stdout.strip().split("\n"):
+                                if line:
+                                    parts = line.split(None, 3)
+                                    if len(parts) >= 4:
+                                        title = parts[3]
+                                        app_name = title.split(" - ")[-1] if " - " in title else title
+                                        break
+                    except Exception:
+                        pass
+                if title:
+                    self._collect_entry(app_name, title)
+            except Exception as e:
+                print(f"[PCActivity] ❌ Linux 采集错误: {e}")
+            for _ in range(self.interval):
+                if not self._running: break
+                _time.sleep(1)
         print("[PCActivity] 线程退出")
 
     @staticmethod
-    def _get_process_name(hwnd, win32process) -> str:
-        """根据窗口句柄获取进程名"""
+    def _get_process_name_win32(hwnd, win32process) -> str:
+        """Windows: 根据窗口句柄获取进程名"""
         try:
             import psutil
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
@@ -375,18 +508,30 @@ class PCActivityTracker:
             return proc.name()
         except Exception:
             pass
-        # fallback: 无 psutil 时返回通用名称
         return "Unknown"
+
 
 
 # ── 10 分钟活动摘要 ──────────────────────────────────
 
 # App 名称美化映射（进程名 → 简称）
 _APP_DISPLAY_MAP = {
+    # Windows
     "explorer.exe": "文件管理", "msedge.exe": "Edge", "chrome.exe": "Chrome",
     "Code.exe": "VS Code", "Photoshop.exe": "PS", "WindowsTerminal.exe": "终端",
     "notepad++.exe": "Notepad++", "Notepad.exe": "记事本",
     "ApplicationFrameHost.exe": None,  # 由标题决定，_extract_hints 会提取
+    # macOS
+    "Safari": "Safari", "Google Chrome": "Chrome", "Microsoft Edge": "Edge",
+    "Finder": "访达", "Terminal": "终端", "iTerm2": "终端", "TextEdit": "文本编辑",
+    "Preview": "预览", "Xcode": "Xcode", "Code": "VS Code", "Cursor": "Cursor",
+    "WeChat": "微信", "Telegram": "Telegram", "Discord": "Discord",
+    "Spotify": "Spotify", "Music": "音乐", "Final Cut Pro": "FCP",
+    "Keynote": "Keynote", "Pages": "Pages", "Numbers": "Numbers",
+    "Notes": "备忘录", "Reminders": "提醒事项", "Mail": "邮件",
+    "System Preferences": "系统设置", "System Settings": "系统设置",
+    "Activity Monitor": "活动监视器",
+    # Common
     "screen_off": "锁屏", "screen_on": "亮屏",
 }
 

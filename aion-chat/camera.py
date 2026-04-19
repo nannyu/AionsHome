@@ -2,7 +2,7 @@
 摄像头监控：CameraMonitor 类、Sentinel 分析、Core 唤醒、监控日志读写
 """
 
-import json, time, re, base64, asyncio, threading, sqlite3, random
+import json, time, re, base64, asyncio, threading, sqlite3, random, uuid
 from pathlib import Path
 
 import cv2, httpx, aiosqlite
@@ -103,17 +103,28 @@ async def async_get_last_user_msg_time() -> float:
         return row[0] if row else 0
 
 
+def _cam_backend():
+    """返回当前平台最佳的摄像头后端"""
+    import sys
+    if sys.platform == "win32":
+        return cv2.CAP_DSHOW
+    if sys.platform == "darwin":
+        return cv2.CAP_AVFOUNDATION
+    return cv2.CAP_V4L2
+
+
 def detect_cameras(max_test: int = 5, skip_index: int = -1) -> list:
-    """扫描可用摄像头（DirectShow 后端 + 实际读帧验证）
+    """扫描可用摄像头（平台适配后端 + 实际读帧验证）
     skip_index: 跳过正在使用的摄像头，避免抢占设备导致采集线程中断
     """
+    backend = _cam_backend()
     available = []
     for i in range(max_test):
         if i == skip_index:
-            available.append(i)  # 正在用的摄像头直接视为可用
+            available.append(i)
             continue
         try:
-            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+            cap = cv2.VideoCapture(i, backend)
             if cap.isOpened():
                 ret, frame = cap.read()
                 if ret and frame is not None and frame.mean() > 1:
@@ -184,7 +195,7 @@ class CameraMonitor:
 
             idx = self.cfg["camera_index"]
             self._cancel_verify = False
-            self.cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+            self.cap = cv2.VideoCapture(idx, _cam_backend())
             if not self._verify_camera(max_wait=10):
                 if self.cap:
                     try: self.cap.release()
@@ -280,7 +291,7 @@ class CameraMonitor:
                     time.sleep(0.5)
                 if not self.running:
                     return
-                self.cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+                self.cap = cv2.VideoCapture(idx, _cam_backend())
                 self._cancel_verify = False
                 if self._verify_camera(max_wait=10):
                     self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
@@ -530,7 +541,7 @@ call_core判断依据：
             {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}
         ]}]
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{sentinel_model}:generateContent?key={gemini_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{sentinel_model}:generateContent"
         payload = {"contents": contents}
         print(f"[Monitor] 正在调用 Sentinel 模型: {sentinel_model}")
 
@@ -539,7 +550,7 @@ call_core判断依据：
 
         try:
             async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(url, json=payload)
+                resp = await client.post(url, json=payload, headers={"x-goog-api-key": gemini_key})
                 resp.raise_for_status()
                 data = resp.json()
                 raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -685,7 +696,7 @@ call_core判断依据：
         messages = prefix + mem_inject + history + [last_msg]
 
         # 预生成 msg_id（TTS 分段文件命名需要）
-        core_msg_id = f"msg_{int(time.time()*1000)}_cr"
+        core_msg_id = f"msg_{uuid.uuid4().hex[:16]}_cr"
 
         # TTS：检查是否有前端开了 TTS
         core_tts = None
@@ -708,7 +719,7 @@ call_core判断依据：
             return
 
         now = time.time()
-        trigger_msg_id = f"msg_{int(now*1000)}_ct"
+        trigger_msg_id = f"msg_{uuid.uuid4().hex[:16]}_ct"
         async with get_db() as db:
             await db.execute(
                 "INSERT INTO messages (id, conv_id, role, content, created_at, attachments) VALUES (?,?,?,?,?,?)",
@@ -716,7 +727,7 @@ call_core判断依据：
             )
             # 插入系统提示：哨兵唤醒了Core
             sys_now = time.time()
-            sys_msg_id = f"msg_{int(sys_now*1000)}_sw"
+            sys_msg_id = f"msg_{uuid.uuid4().hex[:16]}_sw"
             sys_content = f"{ai_name}偷偷查看了监控"
             await db.execute(
                 "INSERT INTO messages (id, conv_id, role, content, created_at, attachments) VALUES (?,?,?,?,?,?)",
@@ -821,7 +832,7 @@ async def perform_cam_check(conv_id: str, model_key: str):
     ]
 
     # 预生成 msg_id（TTS 分段文件命名需要）
-    msg_id = f"msg_{int(time.time()*1000)}_cc"
+    msg_id = f"msg_{uuid.uuid4().hex[:16]}_cc"
 
     # TTS：检查是否有前端开了 TTS
     cam_tts = None
@@ -848,7 +859,7 @@ async def perform_cam_check(conv_id: str, model_key: str):
 
     # 插入系统提示：查看了监控画面
     sys_now = time.time()
-    sys_msg_id = f"msg_{int(sys_now*1000)}_cc_sys"
+    sys_msg_id = f"msg_{uuid.uuid4().hex[:16]}_cc_sys"
     sys_content = f"{ai_name}查看了监控画面"
     async with get_db() as db:
         await db.execute(

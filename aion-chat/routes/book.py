@@ -40,10 +40,18 @@ async def upload_book(file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith('.epub'):
         raise HTTPException(400, "只支持 EPUB 格式")
 
-    # 保存到临时目录
-    tmp_path = _TMP_DIR / file.filename
+    # 保存到临时目录（过滤路径穿越）
+    safe_name = Path(file.filename).name
+    tmp_path = _TMP_DIR / safe_name
     try:
-        content = await file.read()
+        chunks = []
+        total = 0
+        while chunk := await file.read(65536):
+            total += len(chunk)
+            if total > 100 * 1024 * 1024:
+                raise HTTPException(413, "文件太大，最大 100MB")
+            chunks.append(chunk)
+        content = b"".join(chunks)
         tmp_path.write_bytes(content)
 
         # 解析 EPUB

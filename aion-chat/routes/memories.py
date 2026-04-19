@@ -2,7 +2,7 @@
 记忆库 CRUD API + 手动总结 + 原文追溯
 """
 
-import time
+import time, uuid
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -42,7 +42,7 @@ async def list_memories():
 async def create_memory(body: MemoryCreate):
     """手动添加记忆（无原文追溯，不影响总结锚点）"""
     vec = await get_embedding(body.content)
-    mem_id = f"mem_{int(time.time()*1000)}"
+    mem_id = f"mem_{uuid.uuid4().hex[:12]}"
     now = time.time()
     async with get_db() as db:
         await db.execute(

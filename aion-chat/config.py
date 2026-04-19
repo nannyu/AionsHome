@@ -2,7 +2,7 @@
 全局配置：路径、常量、settings / worldbook / chat_status 读写
 """
 
-import json, time, re
+import json, time, re, threading
 from pathlib import Path
 
 # ── 路径 ─────────────────────────────────────────
@@ -30,6 +30,8 @@ DIGEST_ANCHOR_PATH = DATA_DIR / "digest_anchor.json"
 INDEX_PATH = CHATS_DIR / "_index.json"
 
 # ── Settings ─────────────────────────────────────
+_json_lock = threading.Lock()
+
 def load_settings():
     if SETTINGS_PATH.exists():
         with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
@@ -46,9 +48,14 @@ def load_settings():
     save_settings(keys)
     return keys
 
+def _atomic_write(path: Path, content: str):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(path)
+
 def save_settings(data: dict):
-    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    with _json_lock:
+        _atomic_write(SETTINGS_PATH, json.dumps(data, ensure_ascii=False, indent=2))
 
 SETTINGS = load_settings()
 
@@ -71,7 +78,8 @@ def load_worldbook():
     return {"ai_persona": "", "user_persona": "", "system_prompt": "", "ai_name": "AI", "user_name": "你"}
 
 def save_worldbook(data: dict):
-    WORLDBOOK_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    with _json_lock:
+        _atomic_write(WORLDBOOK_PATH, json.dumps(data, ensure_ascii=False, indent=2))
 
 # ── Chat Status ──────────────────────────────────
 def load_chat_status() -> dict:
@@ -84,7 +92,8 @@ def load_chat_status() -> dict:
 
 def save_chat_status(status: str):
     data = {"status": status, "updated_at": time.time()}
-    CHAT_STATUS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    with _json_lock:
+        _atomic_write(CHAT_STATUS_PATH, json.dumps(data, ensure_ascii=False, indent=2))
 
 # ── Digest Anchor ────────────────────────────────
 def load_digest_anchor() -> float:
@@ -99,7 +108,8 @@ def load_digest_anchor() -> float:
 
 def save_digest_anchor(ts: float):
     data = {"last_digest_ts": ts, "updated_at": time.time()}
-    DIGEST_ANCHOR_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    with _json_lock:
+        _atomic_write(DIGEST_ANCHOR_PATH, json.dumps(data, ensure_ascii=False, indent=2))
 
 # ── 文件索引 ─────────────────────────────────────
 def load_file_index():
@@ -111,7 +121,8 @@ def load_file_index():
     return {}
 
 def save_file_index(idx):
-    INDEX_PATH.write_text(json.dumps(idx, ensure_ascii=False, indent=2), encoding='utf-8')
+    with _json_lock:
+        _atomic_write(INDEX_PATH, json.dumps(idx, ensure_ascii=False, indent=2))
 
 def sanitize_filename(name):
     return re.sub(r'[\\/:*?"<>|\n\r]', '_', name).strip().rstrip('.')
@@ -165,8 +176,8 @@ def load_cam_config() -> dict:
     return dict(DEFAULT_CAM_CFG)
 
 def save_cam_config(cfg: dict):
-    with open(CAM_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    with _json_lock:
+        _atomic_write(CAM_CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
 
 # ── 允许上传的文件类型 ────────────────────────────
 ALLOWED_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp',

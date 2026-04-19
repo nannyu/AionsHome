@@ -152,7 +152,7 @@ async def list_conversations():
 @router.post("/conversations")
 async def create_conversation(body: ConvCreate):
     now = time.time()
-    conv_id = f"tc_{int(now * 1000)}"
+    conv_id = f"tc_{uuid.uuid4().hex[:12]}"
     async with get_db() as db:
         await db.execute(
             "INSERT INTO theater_conversations (id, title, persona_id, model, created_at, updated_at) VALUES (?,?,?,?,?,?)",
@@ -258,7 +258,7 @@ async def update_message(msg_id: str, body: MsgUpdate):
 @router.post("/conversations/{conv_id}/send")
 async def send_message(conv_id: str, body: MsgCreate):
     now = time.time()
-    msg_id = f"tm_{int(now * 1000)}"
+    msg_id = f"tm_{uuid.uuid4().hex[:16]}"
 
     att_json = json.dumps(body.attachments, ensure_ascii=False) if body.attachments else "[]"
     async with get_db() as db:
@@ -321,7 +321,7 @@ async def send_message(conv_id: str, body: MsgCreate):
     if prefix:
         history = prefix + history
 
-    ai_msg_id = f"tm_{int(time.time() * 1000)}_ai"
+    ai_msg_id = f"tm_{uuid.uuid4().hex[:16]}_ai"
     usage_meta: dict = {}
     _q: asyncio.Queue = asyncio.Queue()
 
@@ -444,7 +444,7 @@ async def regenerate_message(conv_id: str, context_limit: int = 20, temperature:
     if prefix:
         history = prefix + history
 
-    ai_msg_id = f"tm_{int(time.time() * 1000)}_regen"
+    ai_msg_id = f"tm_{uuid.uuid4().hex[:16]}_regen"
     usage_meta: dict = {}
     _q: asyncio.Queue = asyncio.Queue()
 

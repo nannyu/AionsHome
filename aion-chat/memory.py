@@ -2,7 +2,7 @@
 向量记忆库：embedding、recall、手动总结、即时哨兵（RAG 路由）
 """
 
-import json, time, struct, math
+import json, time, struct, math, uuid
 from datetime import datetime
 
 import aiosqlite, httpx
@@ -38,11 +38,11 @@ async def get_embedding(text: str) -> list[float] | None:
     gemini_key = get_key("gemini_free")
     if not gemini_key:
         return None
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{EMBEDDING_MODEL}:embedContent?key={gemini_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{EMBEDDING_MODEL}:embedContent"
     body = {"content": {"parts": [{"text": text}]}}
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(url, json=body)
+            resp = await client.post(url, json=body, headers={"x-goog-api-key": gemini_key})
             resp.raise_for_status()
             return resp.json()["embedding"]["values"]
     except Exception:
@@ -280,12 +280,12 @@ async def instant_digest(recent_messages: list[dict]) -> dict:
     )
 
     model = "gemini-3.1-flash-lite-preview"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     contents = [{"role": "user", "parts": [{"text": prompt}]}]
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(url, json={"contents": contents})
+            resp = await client.post(url, json={"contents": contents}, headers={"x-goog-api-key": gemini_key})
             resp.raise_for_status()
             data = resp.json()
             raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -355,11 +355,11 @@ async def _call_flash_lite(prompt: str) -> dict | None:
     if not gemini_key:
         return None
     model = "gemini-3.1-flash-lite-preview"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     contents = [{"role": "user", "parts": [{"text": prompt}]}]
     try:
         async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(url, json={"contents": contents})
+            resp = await client.post(url, json={"contents": contents}, headers={"x-goog-api-key": gemini_key})
             resp.raise_for_status()
             data = resp.json()
             raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -460,7 +460,7 @@ async def manual_digest() -> dict:
         source_start_ts = group[0]["created_at"]
         source_end_ts = group[-1]["created_at"]
 
-        mem_id = f"mem_{int(time.time()*1000)}_{hash(summary) % 10000}"
+        mem_id = f"mem_{uuid.uuid4().hex[:12]}"
         now = time.time()
         keywords_json = json.dumps(keywords, ensure_ascii=False)
 

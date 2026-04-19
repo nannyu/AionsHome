@@ -2,7 +2,7 @@
 文件管理路由：上传、聊天记录文件 CRUD、导出
 """
 
-import json, time, re, mimetypes
+import json, time, re, mimetypes, uuid
 
 from fastapi import APIRouter, UploadFile, File
 from pydantic import BaseModel
@@ -125,9 +125,14 @@ async def upload_file(file: UploadFile = File(...)):
     if ext == '.jpe': ext = '.jpg'
     fname = f"{int(time.time()*1000)}{ext}"
     fpath = UPLOADS_DIR / fname
-    content = await file.read()
-    if len(content) > 20 * 1024 * 1024:
-        return {"error": "文件太大，最大 20MB"}
+    chunks = []
+    total = 0
+    while chunk := await file.read(65536):
+        total += len(chunk)
+        if total > 20 * 1024 * 1024:
+            return {"error": "文件太大，最大 20MB"}
+        chunks.append(chunk)
+    content = b"".join(chunks)
     fpath.write_bytes(content)
     url = f"/uploads/{fname}"
     return {"url": url, "type": file.content_type, "name": file.filename}
@@ -170,7 +175,7 @@ async def save_chat_file(conv_id: str, body: FileContent):
                              (parsed["model"], time.time(), conv_id))
         await db.execute("DELETE FROM messages WHERE conv_id=?", (conv_id,))
         for i, m in enumerate(parsed["messages"]):
-            msg_id = f"msg_{int(m['created_at']*1000)}_{i}"
+            msg_id = f"msg_{uuid.uuid4().hex[:16]}"
             await db.execute(
                 "INSERT INTO messages (id, conv_id, role, content, created_at) VALUES (?,?,?,?,?)",
                 (msg_id, conv_id, m["role"], m["content"], m["created_at"])

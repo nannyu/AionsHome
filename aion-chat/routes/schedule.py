@@ -2,7 +2,7 @@
 日程路由：列表 / 手动添加 / 删除
 """
 
-import time
+import time, uuid
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from typing import Optional
@@ -35,7 +35,7 @@ async def list_schedules(status: Optional[str] = Query(None)):
 
 @router.post("/api/schedules")
 async def create_schedule(body: ScheduleCreate):
-    sid = f"sch_{int(time.time()*1000)}"
+    sid = f"sch_{uuid.uuid4().hex[:12]}"
     now = time.time()
     trigger_at = body.trigger_at.replace("T", " ")
     async with get_db() as db:
