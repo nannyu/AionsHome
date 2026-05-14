@@ -329,6 +329,10 @@ async def annotate_segment(book_id: str, ch_idx: int, body: AnnotateRequest):
     model_key = body.model_key or DEFAULT_MODEL
     if model_key not in MODELS:
         model_key = DEFAULT_MODEL
+    if model_key not in MODELS:
+        model_key = next(iter(MODELS)) if MODELS else None
+    if not model_key:
+        raise HTTPException(500, "没有可用的 AI 模型")
 
     messages = _build_annotate_messages(wb, annotate_text, chapter['title'],
                                          prev_summaries, start_p, end_p, chat_context, book_title)
@@ -401,6 +405,10 @@ async def annotate_all_segments(book_id: str, ch_idx: int, body: AnnotateAllRequ
     model_key = body.model_key or DEFAULT_MODEL
     if model_key not in MODELS:
         model_key = DEFAULT_MODEL
+    if model_key not in MODELS:
+        model_key = next(iter(MODELS)) if MODELS else None
+    if not model_key:
+        raise HTTPException(500, "没有可用的 AI 模型")
 
     async def generate():
         yield f"data: {json.dumps({'type': 'start', 'total_segments': total})}\n\n"

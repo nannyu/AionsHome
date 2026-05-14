@@ -185,7 +185,7 @@ MODELS = {
     "Codex":            {"provider": "codex_cli",  "model": ""},
 }
 
-DEFAULT_MODEL = "gemini-3-flash"
+DEFAULT_MODEL = "gemini-3.1-lite"
 
 # ── 摄像头默认配置 ───────────────────────────────
 DEFAULT_CAM_CFG = {

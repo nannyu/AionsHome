@@ -965,10 +965,17 @@ async function startAnnotateAll(segments) {
   let doneCount = 0;
 
   try {
+    // 获取主聊天当前使用的模型，批注跟主聊天同步
+    let modelKey = null;
+    try {
+      const convs = await api('GET', '/api/conversations');
+      if (convs && convs.length > 0) modelKey = convs[0].model || null;
+    } catch (e) { console.warn('获取聊天模型失败，使用默认模型', e); }
+
     const resp = await fetch(`/api/books/${currentBook.book_id}/chapters/${currentChIdx}/annotate-all`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model_key: null })
+      body: JSON.stringify({ model_key: modelKey })
     });
 
     const reader = resp.body.getReader();
